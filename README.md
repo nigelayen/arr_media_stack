@@ -1,4 +1,6 @@
-# Docker Media Stack
+<img src="https://www.plex.tv/wp-content/themes/plex/assets/img/plex-logo.svg" alt="plex_logo" width="200"/>
+
+# A Docker hosted Plex media stack
 A self hosted media automation and streaming platform powered by Docker Compose. This stack provides a complete media management ecosystem including:
 - Media requests and approvals
 - Automated movie and TV management
