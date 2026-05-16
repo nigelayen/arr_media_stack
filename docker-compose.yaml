@@ -1,0 +1,302 @@
+services:
+  # Media requests
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    init: true
+    container_name: seerr
+    environment:
+      - LOG_LEVEL=debug
+      - TZ=${TZ}
+    ports:
+      - 5055:5055
+    volumes:
+      - /opt/docker/seerr/config:/app/config
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
+    restart: unless-stopped
+        
+  # Subtitles management
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_PATH}/bazarr/config:/config
+      - ${MEDIA_PATH}/Movies:/movies
+      - ${MEDIA_PATH}/TV:/tv
+    ports:
+      - 6767:6767
+    restart: unless-stopped
+    networks:
+      - media-network
+    oom_score_adj: 500
+
+  # Media metadata, collections, and overlays
+  kometa:
+    container_name: kometa
+    image: lscr.io/linuxserver/kometa:latest
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - KOMETA_CONFIG=/config/config.yml
+      - KOMETA_RUN=False
+      - KOMETA_TIME=03:30
+    volumes:
+      - ${CONFIG_PATH}/kometa/config:/config:rw
+    networks:
+      - media-network
+    oom_score_adj: 500
+
+  # Analytics and monitoring
+  tautulli:
+    image: ghcr.io/tautulli/tautulli
+    container_name: tautulli
+    restart: unless-stopped
+    volumes:
+      - ${CONFIG_PATH}/tautulli:/config
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    ports:
+      - 8111:8181
+    networks:
+      - media-network
+
+  # Downloads manager
+  sabnzbd:
+    image: lscr.io/linuxserver/sabnzbd:latest
+    container_name: sabnzbd
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - HAS_IPV6=false
+      - GOTIFY_URL=${GOTIFY_URL}
+      - GOTIFY_TOKEN=${GOTIFY_TOKEN}
+      - GOTIFY_INCLUDE_SAB_ENV=true
+      - GOTIFY_SAB_ENV_KEYS=SAB_FINAL_NAME,SAB_CAT,SAB_STATUS,SAB_FAIL_MSG,SAB_BYTES,SAB_BYTES_DOWNLOADED,SAB_DOWNLOAD_TIME,SAB_PRIORITY,SAB_GROUP,SAB_NZO_ID,SAB_NOTIFICATION_PARAMETERS
+    volumes:
+      - ${SSD_PATH}/downloads:/downloads
+      - ${CONFIG_PATH}/sabnzbd/config:/config
+    ports:
+      - 8085:8080
+    restart: unless-stopped
+    networks:
+      - media-network
+
+  # Usenet indexer manager
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_PATH}/prowlarr/data:/config
+    ports:
+      - 9696:9696
+    restart: unless-stopped
+    networks:
+      - media-network
+
+  # Automation for the management of Sonarr & Radarr quality profiles
+  profilarr:
+    image: santiagosayshey/profilarr:latest
+    container_name: profilarr
+    ports:
+        - 6868:6868
+    volumes:
+        - ${CONFIG_PATH}/profilarr:/config
+    environment:
+        - TZ=${TZ}
+    restart: unless-stopped
+    networks:
+      - media-network
+
+  # Media server
+  plex:
+    container_name: plex
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - PLEX_CLAIM=${PLEX_CLAIM}
+      - LIBVA_DRIVER_NAME=iHD
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+    volumes:
+      - ${SSD_PATH}/plexms/config:/config
+      - ${MEDIA_PATH}/Movies:/movies
+      - ${MEDIA_PATH}/TV:/tv
+    restart: unless-stopped
+    image: plexinc/pms-docker:latest
+    network_mode: host
+    oom_score_adj: -100
+
+  # PVR for TV shows
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: sonarr
+    volumes:
+      - ${CONFIG_PATH}/sonarr:/config
+      - ${SSD_PATH}/downloads:/downloads
+      - ${MEDIA_PATH}/TV:/tv
+    ports:
+        - 7989:8989
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      - media-network
+
+  # PVR for movies
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    volumes:
+      - ${CONFIG_PATH}/radarr:/config
+      - ${SSD_PATH}/downloads:/downloads
+      - ${MEDIA_PATH}/Movies:/movies
+    ports:
+      - 7878:7878
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      - media-network
+
+  # Media Library Analytics & Transcode Automation
+  tdarr:
+    container_name: tdarr
+    image: ghcr.io/haveagitgat/tdarr:latest
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 2G
+    ports:
+      - 8265:8265 
+      - 8266:8266 
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK_SET=002
+      - serverIP=0.0.0.0
+      - serverPort=8266
+      - webUIPort=8265
+      - internalNode=true
+      - inContainer=true
+      - ffmpegVersion=7
+      - nodeName=TdarrServer
+      - auth=false
+      - openBrowser=true
+      - maxLogSizeMB=10
+      - LIBVA_DRIVER_NAME=iHD
+      - CHOWN_ON_STARTUP=false
+    volumes:
+      - ${CONFIG_PATH}/tdarr/server:/app/server
+      - ${CONFIG_PATH}/tdarr/configs:/app/configs
+      - ${CONFIG_PATH}/tdarr/logs:/app/logs
+      - ${MEDIA_PATH}:/media
+      - ${SSD_PATH}/transcode_cache:/temp
+    devices:
+      - /dev/dri:/dev/dri
+    networks:
+      - media-network
+    oom_score_adj: 500
+
+  # Tdarr Node - Additional processing power
+  tdarr-node:
+    container_name: tdarr-node
+    image: ghcr.io/haveagitgat/tdarr_node:latest
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 2G
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK_SET=002
+      - nodeName=TdarrNode1
+      - serverIP=tdarr
+      - serverPort=8266
+      - inContainer=true
+      - ffmpegVersion=7
+      - nodeType=mapped
+      - priority=-1
+      - maxLogSizeMB=10
+      - pollInterval=2000
+      - startPaused=false
+      - LIBVA_DRIVER_NAME=iHD
+      - CHOWN_ON_STARTUP=false
+    volumes:
+      - ${CONFIG_PATH}/tdarr/configs:/app/configs
+      - ${CONFIG_PATH}/tdarr/logs:/app/logs
+      - ${MEDIA_PATH}:/media
+      - ${SSD_PATH}/transcode_cache:/temp
+    devices:
+      - /dev/dri:/dev/dri
+    networks:
+      - media-network
+    depends_on:
+      - tdarr
+    oom_score_adj: 500
+
+  # Upcoming Movies & TV Show overlays for Kometa
+  umtk:
+    image: netplexflix/umtk:latest
+    container_name: umtk
+    ports:
+      - "2120:2120" # Web UI
+    environment:
+      - CRON=0 2 * * * 
+      - DOCKER=true
+      - TZ=${TZ} 
+      - PUID=${PUID} 
+      - PGID=${PGID} 
+    extra_hosts: 
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${CONFIG_PATH}/umtk/config:/app/config 
+      - ${CONFIG_PATH}/umtk/video:/video 
+      - ${CONFIG_PATH}/kometa/config:/app/kometa 
+      - ${MEDIA_PATH}/umtk/movies:/umtkmovies
+      - ${MEDIA_PATH}/umtk/tv:/umtktv
+    restart: unless-stopped
+    networks:
+      - media-network
+
+networks:
+  media-network:
+    driver: bridge  
